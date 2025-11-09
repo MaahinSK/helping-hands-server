@@ -28,58 +28,109 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// MongoDB connection optimized for Vercel
-let isDbConnected = false;
+// MongoDB connection with better error handling
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 3;
 
 const connectDB = async () => {
-  if (isDbConnected) {
+  if (mongoose.connection.readyState === 1) {
+    console.log('✅ MongoDB already connected');
     return;
   }
 
-  try {
-    console.log('🔄 Connecting to MongoDB...');
-    
-    // Connection options for serverless
-    const options = {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 45000,
-    };
+  if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+    console.log('❌ Max connection attempts reached');
+    return;
+  }
 
-    await mongoose.connect(process.env.MONGODB_URI, options);
+  connectionAttempts++;
+  
+  try {
+    console.log(`🔄 MongoDB connection attempt ${connectionAttempts}...`);
     
-    isDbConnected = true;
+    // Simple connection without complex options
+    await mongoose.connect(process.env.MONGODB_URI);
+    
     console.log('✅ MongoDB connected successfully');
     
     mongoose.connection.on('error', (err) => {
       console.error('MongoDB connection error:', err);
-      isDbConnected = false;
     });
 
     mongoose.connection.on('disconnected', () => {
       console.log('MongoDB disconnected');
-      isDbConnected = false;
     });
     
   } catch (error) {
     console.error('❌ MongoDB connection failed:', error.message);
-    isDbConnected = false;
+    
+    // Log more details about the error
+    if (error.name === 'MongoServerSelectionError') {
+      console.log('🔧 This is usually a network/firewall issue');
+    }
+    
+    if (error.name === 'MongoParseError') {
+      console.log('🔧 Check your MONGODB_URI format');
+    }
   }
 };
 
 // Connect to MongoDB
 connectDB();
 
-// Routes
+// Debug route - ADD THIS
+app.get('/api/debug-db', async (req, res) => {
+  try {
+    const dbState = mongoose.connection.readyState;
+    const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    
+    // Test if we can actually query the database
+    let canQuery = false;
+    if (dbState === 1) {
+      try {
+        // Try a simple query to verify connection works
+        const db = mongoose.connection.db;
+        const collections = await db.listCollections().toArray();
+        canQuery = true;
+      } catch (queryError) {
+        console.log('Query test failed:', queryError.message);
+      }
+    }
+    
+    res.json({
+      mongoDB: {
+        readyState: dbState,
+        status: states[dbState] || 'unknown',
+        isConnected: dbState === 1,
+        canQuery: canQuery,
+        connectionAttempts: connectionAttempts
+      },
+      environment: {
+        hasMongoURI: !!process.env.MONGODB_URI,
+        mongoURILength: process.env.MONGODB_URI ? process.env.MONGODB_URI.length : 0,
+        nodeEnv: process.env.NODE_ENV,
+        hasClientURL: !!process.env.CLIENT_URL
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Debug failed',
+      message: error.message
+    });
+  }
+});
+
+// Root route
 app.get('/', (req, res) => {
   res.json({
     message: 'Helping Hands Server API',
     status: 'Running on Vercel',
-    database: isDbConnected ? 'Connected' : 'Disconnected',
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
     timestamp: new Date().toISOString(),
     endpoints: [
       'GET /api/health',
-      'GET /api/test',
+      'GET /api/debug-db',
       'GET /api/events',
       'POST /api/auth/sync-user',
       'GET /api/events/user/:uid',
@@ -88,7 +139,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check with detailed DB status
+// Health check
 app.get('/api/health', (req, res) => {
   const dbState = mongoose.connection.readyState;
   let dbStatus = 'Disconnected';
@@ -105,7 +156,7 @@ app.get('/api/health', (req, res) => {
     database: {
       status: dbStatus,
       readyState: dbState,
-      connected: isDbConnected
+      connected: dbState === 1
     },
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
@@ -121,7 +172,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/users', userRoutes);
 
-// 404 handler
+// 404 handler - UPDATE THIS to include debug-db
 app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Route not found',
@@ -129,6 +180,7 @@ app.use('*', (req, res) => {
     availableRoutes: [
       'GET /',
       'GET /api/health',
+      'GET /api/debug-db',
       'GET /api/events',
       'POST /api/auth/sync-user',
       'GET /api/events/user/:uid',
