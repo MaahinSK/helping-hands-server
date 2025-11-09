@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -29,7 +28,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// MongoDB connection
+// MongoDB connection optimized for Vercel
 let isDbConnected = false;
 
 const connectDB = async () => {
@@ -38,13 +37,29 @@ const connectDB = async () => {
   }
 
   try {
-    console.log('Connecting to MongoDB...');
+    console.log('🔄 Connecting to MongoDB...');
     
-    // Simple connection for Vercel
-    await mongoose.connect(process.env.MONGODB_URI);
+    // Connection options for serverless
+    const options = {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+    };
+
+    await mongoose.connect(process.env.MONGODB_URI, options);
     
     isDbConnected = true;
     console.log('✅ MongoDB connected successfully');
+    
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+      isDbConnected = false;
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      console.log('MongoDB disconnected');
+      isDbConnected = false;
+    });
     
   } catch (error) {
     console.error('❌ MongoDB connection failed:', error.message);
@@ -55,7 +70,7 @@ const connectDB = async () => {
 // Connect to MongoDB
 connectDB();
 
-// Root route
+// Routes
 app.get('/', (req, res) => {
   res.json({
     message: 'Helping Hands Server API',
@@ -73,17 +88,31 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check with DB status
+// Health check with detailed DB status
 app.get('/api/health', (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  let dbStatus = 'Disconnected';
+  
+  switch(dbState) {
+    case 0: dbStatus = 'Disconnected'; break;
+    case 1: dbStatus = 'Connected'; break;
+    case 2: dbStatus = 'Connecting'; break;
+    case 3: dbStatus = 'Disconnecting'; break;
+  }
+
   res.json({
     message: 'Server is healthy! 🚀',
-    database: isDbConnected ? 'Connected' : 'Disconnected',
+    database: {
+      status: dbStatus,
+      readyState: dbState,
+      connected: isDbConnected
+    },
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// Import and use your actual routes
+// Import and use your routes
 import authRoutes from '../routes/auth.js';
 import eventRoutes from '../routes/events.js';
 import userRoutes from '../routes/users.js';
