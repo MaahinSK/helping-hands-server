@@ -69,6 +69,6 @@ eventSchema.pre('save', function(next) {
 
 eventSchema.index({ eventDate: 1 })
 eventSchema.index({ eventType: 1 })
-eventSchema.index({ title: 'text' })
+eventSchema.index({ title: 'text', description: 'text' });
 
 export default mongoose.model('Event', eventSchema)
