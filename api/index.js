@@ -28,43 +28,43 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// MongoDB connection with serverless optimization
-let cachedDb = null;
-
+// MongoDB connection
 const connectDB = async () => {
-  if (cachedDb) {
-    return cachedDb;
-  }
-
   try {
-    // MongoDB connection options for serverless
     const options = {
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
-      bufferCommands: false,
-      bufferMaxEntries: 0
     };
 
     await mongoose.connect(process.env.MONGODB_URI, options);
-    
-    cachedDb = mongoose.connection;
     console.log('✅ MongoDB connected successfully');
-    
-    return cachedDb;
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
-    throw error;
   }
 };
 
-// Connect to MongoDB when a function starts
-connectDB().catch(console.error);
+connectDB();
 
-// Basic routes
+// Root route - Add this!
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Helping Hands Server API',
+    status: 'Running',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/api/health',
+      events: '/api/events',
+      auth: '/api/auth',
+      users: '/api/users'
+    },
+    documentation: 'Check /api/health for server status'
+  });
+});
+
+// Health check
 app.get('/api/health', async (req, res) => {
   try {
-    // Check if MongoDB is connected
     const dbState = mongoose.connection.readyState;
     const dbStatus = dbState === 1 ? 'connected' : 'disconnected';
     
@@ -78,22 +78,6 @@ app.get('/api/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ 
       error: 'Health check failed',
-      message: error.message 
-    });
-  }
-});
-
-// Test MongoDB connection
-app.get('/api/test-db', async (req, res) => {
-  try {
-    const db = await connectDB();
-    res.json({ 
-      message: 'Database connection successful',
-      readyState: db.readyState 
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      error: 'Database connection failed',
       message: error.message 
     });
   }
@@ -113,7 +97,18 @@ app.all('*', (req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
     path: req.originalUrl,
-    method: req.method
+    method: req.method,
+    availableEndpoints: [
+      'GET /',
+      'GET /api/health',
+      'POST /api/auth/sync-user',
+      'GET /api/events',
+      'GET /api/events/:id',
+      'POST /api/events',
+      'POST /api/events/:id/join',
+      'GET /api/events/user/:uid',
+      'GET /api/users/:uid/joined-events'
+    ]
   });
 });
 
