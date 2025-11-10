@@ -1,15 +1,10 @@
-// server.js
+// server.js - Fixed for Vercel
 import express from 'express'
-import mongoose from 'mongoose'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
-import connectDB from './config/database.js'
-import errorHandler from './middleware/errorHandler.js'
-import authRoutes from './routes/auth.js'
-import eventRoutes from './routes/events.js'
-import userRoutes from './routes/users.js'
 
+// Load env vars first
 dotenv.config()
 
 const app = express()
@@ -48,62 +43,41 @@ app.use(helmet())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-// Health check that doesn't require DB
+// Health check (no DB dependency)
 app.get('/api/health', (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  
   res.status(200).json({ 
     message: 'Server is running!',
-    database: dbStatus,
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
-  });
-});
+    environment: process.env.NODE_ENV || 'development'
+  })
+})
 
-// Connect to MongoDB and then setup routes
-const initializeServer = async () => {
-  try {
-    await connectDB();
-    console.log('✅ Database connected, setting up routes...');
-    
-    // Routes (mounted after DB connection)
-    app.use('/api/auth', authRoutes)
-    app.use('/api/events', eventRoutes)
-    app.use('/api/users', userRoutes)
+// Import routes (but don't use them yet until DB is connected)
+import authRoutes from './routes/auth.js'
+import eventRoutes from './routes/events.js'
+import userRoutes from './routes/users.js'
 
-    // 404 handler
-    app.all('*', (req, res) => {
-      res.status(404).json({ 
-        error: 'Route not found',
-        path: req.originalUrl,
-        method: req.method
-      });
-    });
+// Mount routes
+app.use('/api/auth', authRoutes)
+app.use('/api/events', eventRoutes)
+app.use('/api/users', userRoutes)
 
-    // Error handler (should be last)
-    app.use(errorHandler);
-    
-  } catch (error) {
-    console.error('❌ Failed to initialize server:', error);
-    
-    // Setup routes even if DB fails (for graceful degradation)
-    app.use('/api/auth', authRoutes)
-    app.use('/api/events', eventRoutes)
-    app.use('/api/users', userRoutes)
+// 404 handler
+app.all('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found',
+    path: req.originalUrl,
+    method: req.method
+  })
+})
 
-    app.all('*', (req, res) => {
-      res.status(404).json({ 
-        error: 'Route not found',
-        path: req.originalUrl,
-        method: req.method
-      });
-    });
+// Simple error handler
+app.use((error, req, res, next) => {
+  console.error('Server Error:', error)
+  res.status(500).json({ 
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : error.message
+  })
+})
 
-    app.use(errorHandler);
-  }
-};
-
-// Initialize the server
-initializeServer();
-
-export default app;
+export default app
