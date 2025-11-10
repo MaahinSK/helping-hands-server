@@ -1,3 +1,4 @@
+// server.js
 import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
@@ -13,13 +14,9 @@ dotenv.config()
 
 const app = express()
 
-// Connect to MongoDB
-connectDB()
-
-// CORS Configuration - UPDATED
+// CORS Configuration
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
@@ -27,11 +24,10 @@ app.use(cors({
       'http://localhost:5174', 
       'http://localhost:5175',
       'http://localhost:3000',
-      'https://helping-hands-client.vercel.app', // Add your client domain when deployed
+      'https://helping-hands-client.vercel.app',
       process.env.CLIENT_URL
     ].filter(Boolean);
 
-    // Allow all localhost ports and your deployed domains
     if (allowedOrigins.some(allowed => origin.startsWith('http://localhost')) || 
         allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -45,7 +41,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 
-// Handle preflight requests
 app.options('*', cors());
 
 // Other middleware
@@ -53,41 +48,62 @@ app.use(helmet())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-// Routes
-app.use('/api/auth', authRoutes)
-app.use('/api/events', eventRoutes)
-app.use('/api/users', userRoutes)
-
-// Health check
+// Health check that doesn't require DB
 app.get('/api/health', (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  
   res.status(200).json({ 
     message: 'Server is running!',
+    database: dbStatus,
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV
-  })
-})
+  });
+});
 
-// 404 handler
-app.all('*', (req, res) => {
-  res.status(404).json({ 
-    error: 'Route not found',
-    path: req.originalUrl,
-    method: req.method
-  })
-})
+// Connect to MongoDB and then setup routes
+const initializeServer = async () => {
+  try {
+    await connectDB();
+    console.log('✅ Database connected, setting up routes...');
+    
+    // Routes (mounted after DB connection)
+    app.use('/api/auth', authRoutes)
+    app.use('/api/events', eventRoutes)
+    app.use('/api/users', userRoutes)
 
-// Error handler (should be last)
-app.use(errorHandler)
+    // 404 handler
+    app.all('*', (req, res) => {
+      res.status(404).json({ 
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+      });
+    });
 
-// For Vercel, we need to export the app
-export default app
+    // Error handler (should be last)
+    app.use(errorHandler);
+    
+  } catch (error) {
+    console.error('❌ Failed to initialize server:', error);
+    
+    // Setup routes even if DB fails (for graceful degradation)
+    app.use('/api/auth', authRoutes)
+    app.use('/api/events', eventRoutes)
+    app.use('/api/users', userRoutes)
 
-// For local development, keep the app.listen
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 5000
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`)
-    console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`)
-    console.log(`🔗 Health check: http://localhost:${PORT}/api/health`)
-  })
-}
+    app.all('*', (req, res) => {
+      res.status(404).json({ 
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+      });
+    });
+
+    app.use(errorHandler);
+  }
+};
+
+// Initialize the server
+initializeServer();
+
+export default app;

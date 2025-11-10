@@ -1,36 +1,39 @@
+// middleware/errorHandler.js
 const errorHandler = (err, req, res, next) => {
-  console.error(err.stack)
+  console.error('Error:', err);
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
-    const messages = Object.values(err.errors).map(val => val.message)
+    const messages = Object.values(err.errors).map(val => val.message);
     return res.status(400).json({
       error: 'Validation Error',
-      messages
-    })
+      messages: messages,
+      code: 'VALIDATION_ERROR'
+    });
   }
 
   // Mongoose duplicate key error
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0]
     return res.status(400).json({
-      error: 'Duplicate Entry',
-      message: `${field} already exists`
-    })
+      error: 'Duplicate field value entered',
+      code: 'DUPLICATE_KEY'
+    });
   }
 
-  // Mongoose cast error (invalid ObjectId)
+  // Mongoose bad ObjectId
   if (err.name === 'CastError') {
     return res.status(400).json({
-      error: 'Invalid ID',
-      message: 'The provided ID is invalid'
-    })
+      error: 'Resource not found',
+      code: 'INVALID_ID'
+    });
   }
 
+  // Default error
   res.status(500).json({
     error: 'Server Error',
-    message: process.env.NODE_ENV === 'production' ? 'Something went wrong!' : err.message
-  })
-}
+    message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message,
+    code: 'INTERNAL_ERROR'
+  });
+};
 
-export default errorHandler
+export default errorHandler;

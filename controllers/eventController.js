@@ -2,6 +2,10 @@ import Event from '../models/Event.js'
 import mongoose from 'mongoose'
 
 
+// controllers/eventController.js
+import Event from '../models/Event.js'
+import mongoose from 'mongoose'
+
 // @desc    Get events created by user
 // @route   GET /api/events/user/:uid
 export const getUserEvents = async (req, res) => {
@@ -9,38 +13,44 @@ export const getUserEvents = async (req, res) => {
     const { uid } = req.params;
     
     console.log('🔍 Fetching events for user:', uid);
-    console.log('📊 Database state:', mongoose.connection.readyState);
     
     if (!uid) {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
-    // Check if database is connected
+    // Check database connection
     if (mongoose.connection.readyState !== 1) {
-      console.error('❌ Database not connected. State:', mongoose.connection.readyState);
+      console.error('❌ Database not connected');
       return res.status(500).json({ 
-        error: 'Database connection unavailable',
-        connectionState: mongoose.connection.readyState
+        error: 'Database temporarily unavailable',
+        code: 'DATABASE_DISCONNECTED'
       });
     }
 
-    const events = await Event.find({ 'creator.uid': uid }).sort({ eventDate: 1 });
+    const events = await Event.find({ 'creator.uid': uid })
+      .sort({ eventDate: 1 })
+      .lean();
     
     console.log(`✅ Found ${events.length} events for user ${uid}`);
     res.json(events);
     
   } catch (error) {
     console.error('❌ Error in getUserEvents:', error);
-    console.error('📋 Error name:', error.name);
-    console.error('📝 Error message:', error.message);
+    
+    // More specific error handling
+    if (error.name === 'MongoNetworkError') {
+      return res.status(500).json({ 
+        error: 'Database connection failed',
+        code: 'NETWORK_ERROR'
+      });
+    }
     
     res.status(500).json({ 
       error: 'Failed to fetch user events',
-      message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      code: 'SERVER_ERROR'
     });
   }
 }
-
 // @desc    Get all events with filtering and pagination
 // @route   GET /api/events
 export const getEvents = async (req, res) => {
