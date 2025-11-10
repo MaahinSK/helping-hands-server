@@ -16,26 +16,40 @@ const app = express()
 // Connect to MongoDB
 connectDB()
 
-// Middleware
-app.use(helmet())
+// CORS Configuration - UPDATED
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
       'http://localhost:5173',
+      'http://localhost:5174', 
+      'http://localhost:5175',
+      'http://localhost:3000',
+      'https://helping-hands-client.vercel.app', // Add your client domain when deployed
       process.env.CLIENT_URL
-    ];
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    ].filter(Boolean);
+
+    // Allow all localhost ports and your deployed domains
+    if (allowedOrigins.some(allowed => origin.startsWith('http://localhost')) || 
+        allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.log('Blocked by CORS:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
+
+// Handle preflight requests
+app.options('*', cors());
+
+// Other middleware
+app.use(helmet())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 

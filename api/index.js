@@ -8,6 +8,38 @@ dotenv.config();
 
 const app = express();
 
+// Enhanced CORS Configuration
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175', 
+      'http://localhost:3000',
+      'https://helping-hands-client.vercel.app',
+      process.env.CLIENT_URL
+    ].filter(Boolean);
+
+    // Allow all localhost ports and specific domains
+    if (allowedOrigins.some(allowed => origin.startsWith('http://localhost')) || 
+        allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+}));
+
+// Handle preflight requests for all routes
+app.options('*', cors());
+
 // Middleware
 app.use(helmet());
 app.use(
